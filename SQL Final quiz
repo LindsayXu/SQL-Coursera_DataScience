@@ -1,0 +1,114 @@
+6) SELECT sks.sku, MAX(sks.retail*(Decsale.saleinDec-Novsale.saleinNov)) AS monthincrev
+   FROM skstinfo sks
+   JOIN (SELECT DISTINCT sku, COUNT(saledate) AS saleinDec
+                 FROM trnsact
+                 WHERE stype='p' AND EXTRACT(MONTH FROM saledate)='12'
+                 GROUP BY 1) AS Decsale ON sks.sku=Decsale.sku
+         INNER JOIN (SELECT DISTINCT sku, COUNT(saledate) AS saleinNov
+         FROM trnsact
+         WHERE stype='p' AND EXTRACT(MONTH FROM saledate)='11'
+         GROUP BY 1) AS Novsale ON sks.sku=Novsale.sku
+   GROUP BY 1
+   ORDER BY 2 DESC
+
+SELECT vendor, COUNT(DISTINCT sku)
+FROM trnsact
+WHERE NOT EXISTS (SELECT * 
+                  FROM skstinfo sks
+                  WHERE trnsact.sku=sks.sku)
+
+GROUP BY 1
+ORDER BY 1 DESC;
+
+7) SELECT city, state, st.store, MAX(Decavg.avg_decsale-Novavg.avg_novsale)
+   FROM strinfo st
+   JOIN (SELECT store, SUM(amt)/COUNT(DISTINCT saledate) AS avg_decsale
+         FROM trnsact t
+         WHERE EXTRACT(MONTH FROM saledate)='12' AND stype='p'
+         GROUP BY 1
+         HAVING COUNT(DISTINCT EXTRACT(DAY FROM saledate))>20) AS Decavg ON st.store=Decavg.store
+   JOIN (SELECT store, SUM(amt)/COUNT(DISTINCT saledate) AS avg_novsale
+         FROM trnsact t
+         WHERE EXTRACT(MONTH FROM saledate)='11' AND stype='p'
+         GROUP BY 1
+         HAVING COUNT(DISTINCT EXTRACT(DAY FROM saledate))>=20) AS Novavg ON st.store=Novavg.store
+   Group BY 3,1,2
+   ORDER BY 4 DESC
+
+8) SELECT MSA_income, city, state, st.store, avg_rev
+   FROM store_msa st
+   JOIN (SELECT store, SUM(amt)/COUNT(DISTINCT saledate) AS avg_rev
+         FROM trnsact t
+         WHERE stype='p' AND (saledate  < '2005-08-01' OR saledate > '2005-08-31')
+         GROUP BY 1
+         HAVING COUNT(DISTINCT EXTRACT(DAY FROM saledate))>=20) AS ADrev ON st.store=ADrev.store
+         Group BY 4,5,1,2,3
+         ORDER BY 1 DESC
+
+#9)SELECT SUM(amt)/COUNT(DISTINCT saledate)/COUNT(DISTINCT t.store) AS avgrevstore, CASE WHEN msa_income >'1' AND msa_income <'20000' THEN 'low'
+                         WHEN msa_income >'20001' AND msa_income <'30000' THEN 'med-low'
+                         WHEN msa_income >'30001' AND msa_income <'40000' THEN 'med-high'
+                         WHEN msa_income >'40001' AND msa_income <'60000' THEN 'high'
+                         END AS msagroup
+   FROM store_msa st JOIN trnsact t ON st.store=t.store
+   JOIN (SELECT store, COUNT(DISTINCT EXTRACT(DAY FROM saledate)) AS daycount
+         FROM trnsact t
+         WHERE stype='p' AND (saledate < '2005-08-01' OR saledate > '2005-08-31')  
+         GROUP BY 1
+         HAVING daycount>=20) AS Tc ON st.store=Tc.store
+   GROUP BY CASE WHEN msa_income >'1' AND msa_income <'20000' THEN 'low'
+                                                 WHEN msa_income >'20001' AND msa_income <'30000' THEN 'med-low'
+                                                 WHEN msa_income >'30001' AND msa_income <'40000' THEN 'med-high'
+                                                 WHEN msa_income >'40001' AND msa_income <'60000' THEN 'high'
+                                                 END
+   ORDER BY 1 DESC
+
+10) SELECT SUM(amt)/COUNT(DISTINCT saledate)/COUNT(DISTINCT t.store) AS avgrev, CASE WHEN msa_pop >'1' AND msa_pop<'100000' THEN 'very small'
+                         WHEN msa_pop >'100001' AND msa_pop <='200000' THEN 'small'
+                         WHEN msa_pop >'200000' AND msa_pop <='500000' THEN 'med_small'
+                         WHEN msa_pop >'500000' AND msa_pop <='1000000' THEN 'med_large'
+                         WHEN msa_pop >'1000000' AND msa_pop <='5000000' THEN 'large'
+                         WHEN msa_pop >'5000000' THEN 'very large'
+                         END AS msapoptype
+    FROM store_msa st JOIN trnsact t ON st.store=t.store
+    JOIN (SELECT store, COUNT(DISTINCT saledate) AS daycount
+          FROM trnsact t  
+          WHERE stype='p' AND (saledate < '2005-08-01' OR saledate > '2005-08-31')
+          GROUP BY 1
+          HAVING daycount>=20) AS Tc ON st.store=Tc.store
+    WHERE msa_pop >'5000000' AND t.stype='p' AND (t.saledate < '2005-08-01' OR t.saledate > '2005-08-31')
+    GROUP BY CASE WHEN msa_pop >'1' AND msa_pop<'100000' THEN 'very small'
+                         WHEN msa_pop >'100001' AND msa_pop <='200000' THEN 'small'
+                         WHEN msa_pop >'200000' AND msa_pop <='500000' THEN 'med_small'
+                         WHEN msa_pop >'500000' AND msa_pop <='1000000' THEN 'med_large'
+                         WHEN msa_pop >'1000000' AND msa_pop <='5000000' THEN 'large'
+                         WHEN msa_pop >'5000000' THEN 'very large'
+                         END
+
+11) SELECT Tc.store, deptdesc, (sumamt12/daycount12-sumamt11/daycount11)/(sumamt11/daycount11)*100 AS increase_p, city, state
+    FROM (SELECT t.store, deptdesc, SUM(CASE WHEN EXTRACT(MONTH FROM saledate)='11' THEN amt ELSE '0' END) AS sumamt11, 
+              SUM(CASE WHEN EXTRACT(MONTH FROM saledate)='12' THEN amt ELSE '0' END) AS sumamt12,
+              COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM saledate)='11' THEN saledate ELSE NULL END) AS daycount11,
+              COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM saledate)='12' THEN saledate ELSE NULL END) AS daycount12
+          FROM trnsact t, skuinfo s, deptinfo d
+          WHERE EXTRACT(MONTH FROM saledate) IN ('11','12') AND stype='p' AND t.sku=s.sku AND d.dept=s.dept
+          GROUP BY 1,2
+          HAVING sumamt11>=1000 AND sumamt12>=1000) AS Tc
+    JOIN store_msa sm ON Tc.store=sm.store
+    GROUP BY 1,2,4,5,3
+    ORDER BY 3 DESC
+
+#12) SELECT TOP 10 st.store, d.deptdesc, st.city, st.state, Sepavg.avg_sepsale-Augavg.avg_augsale AS decrease
+     FROM skuinfo s
+     JOIN (SELECT sku, store, SUM(amt)/COUNT(DISTINCT saledate) AS avg_sepsale
+           FROM trnsact t
+           WHERE EXTRACT(MONTH FROM saledate)='9' AND stype='p'
+           GROUP BY 2,1) AS Sepavg ON s.sku=Sepavg.sku
+     JOIN (SELECT sku, store, SUM(amt)/COUNT(DISTINCT saledate) AS avg_augsale
+           FROM trnsact t
+           WHERE EXTRACT(MONTH FROM saledate)='8' AND stype='p'
+           GROUP BY 2,1) AS Augavg ON s.sku=Augavg.sku
+     JOIN deptinfo d ON s.dept=d.dept
+     JOIN store_msa st ON st.store=Augavg.store
+     Group BY 5,1,2,3,4
+     ORDER BY 5 DESC
