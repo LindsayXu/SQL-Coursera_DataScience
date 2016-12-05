@@ -112,3 +112,15 @@ ORDER BY 1 DESC;
      JOIN store_msa st ON st.store=Augavg.store
      Group BY 5,1,2,3,4
      ORDER BY 5 DESC
+     
+13) SELECT Tc.store, deptdesc, quant8-quant9 AS decrease, city, state
+FROM (SELECT t.store, deptdesc, SUM(CASE WHEN EXTRACT(MONTH FROM saledate)='8' THEN quantity ELSE NULL END) AS quant8, 
+              SUM(CASE WHEN EXTRACT(MONTH FROM saledate)='9' THEN quantity ELSE NULL END) AS quant9,
+              COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM saledate)='8' THEN saledate ELSE NULL END) AS daycount8,
+              COUNT(DISTINCT CASE WHEN EXTRACT(MONTH FROM saledate)='9' THEN saledate ELSE NULL END) AS daycount9
+      FROM trnsact t, skuinfo s, deptinfo d
+      WHERE EXTRACT(MONTH FROM saledate) IN ('8','9') AND EXTRACT(YEAR FROM saledate) = 2004 AND stype='p' AND t.sku=s.sku AND d.dept=s.dept
+      GROUP BY 1,2
+      HAVING daycount8>=20 AND daycount9>=20) AS Tc
+JOIN store_msa sm ON Tc.store=sm.store
+GROUP BY 1,2,4,5,3
